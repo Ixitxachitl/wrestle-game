@@ -42,7 +42,10 @@
 
   Look:
     title     the show's name on the ring apron (default CHAT SLAM)
-    pixel     screen pixels per art pixel (default 0 = about 1/120 of the source's height: 9 at 1080p)
+    layout    box (default) = in a small box along the bottom of the screen, in the middle; wide = the whole screen
+    boxsize   how wide the small box is, % of the screen (default 40)
+    pixel     screen pixels per art pixel (default 0 = about 1/120 of the source's height: 9 at 1080p; in the box,
+              whatever fills it)
     hold      seconds the winner stays up before it all goes away (default 5)
     volume    0-100 sound effects (default 50; 0 = silent)
     bg        testing: none = transparent in a normal browser too, or a color (default: dark outside OBS)
@@ -67,7 +70,7 @@
   /* ---------- health bars, banners and the comic sound words, over the arena ---------- */
   #ui{position:fixed;inset:0;pointer-events:none;z-index:2;overflow:hidden}
   #bars{position:absolute;left:50%;top:0;translate:-50% -100%;display:flex;align-items:flex-end;gap:calc(var(--p) * 2.5);
-    width:min(94vw,calc(var(--p) * 150));opacity:0;transition:opacity .4s}
+    width:min(calc(var(--boxw,100vw) * .94),calc(var(--p) * 150));opacity:0;transition:opacity .4s}
   #bars.on{opacity:1}
   .hp{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(var(--p) * .8)}
   .hp.r{align-items:flex-end}
@@ -80,7 +83,7 @@
   .hp.r s{right:0}
   .hp s.low{background:linear-gradient(#ff7a6a 0 50%,#e0302a 50%)}
   #bars em{flex:none;font:400 calc(var(--p) * 7)/1 'Bungee',sans-serif;font-style:normal;color:#ffe066;text-shadow:var(--ol),0 calc(var(--p) * .8) 0 #e0302a}
-  #ban{position:absolute;left:50%;top:0;translate:-50% -100%;text-align:center;white-space:nowrap}
+  #ban{position:absolute;left:50%;top:0;translate:-50% -100%;text-align:center;width:max-content;max-width:calc(var(--boxw,100vw) * .96);text-wrap:balance}
   #ban b{display:block;font:400 calc(var(--p) * 10)/1 'Bungee',sans-serif;color:#ffe066;letter-spacing:.02em;
     text-shadow:var(--ol),0 calc(var(--p) * 1.1) 0 #e0302a}
   #ban small{display:block;margin-top:calc(var(--p) * 1.4);font:600 calc(var(--p) * 5.5)/1.1 'Pixelify Sans',monospace;color:#fff;text-shadow:var(--ol)}
@@ -193,7 +196,10 @@ const FIELDS = [
   { k: 'allow', label: 'These people can too', type: 'text', def: '', ph: 'friend1, friend2', help: 'Names that can start a match whatever "Who can start one" says.' },
   { sec: 'Look' },
   { k: 'title', label: 'Show name (on the ring)', type: 'text', def: 'CHAT SLAM', help: 'Letters, numbers and spaces, up to 20.' },
-  { k: 'pixel', label: 'Pixel size', type: 'num', def: 0, min: 0, max: 16, step: 1, help: 'Screen pixels per art pixel: bigger is chunkier. 0 = automatic (9 at 1080p).' },
+  { k: 'layout', label: 'Where it shows', type: 'select', def: 'box', opts: [['box', 'A small box at the bottom centre'], ['wide', 'The whole screen']],
+    help: 'The small box keeps everything in a little window along the bottom of the screen. The whole screen is bigger, with the sky and lights going right up to the top.' },
+  { k: 'boxsize', label: 'Box width (% of the screen)', type: 'num', def: 40, min: 15, max: 100, step: 1, help: 'How wide the small box is.' },
+  { k: 'pixel', label: 'Pixel size', type: 'num', def: 0, min: 0, max: 16, step: 1, help: 'Screen pixels per art pixel: bigger is chunkier. 0 = automatic (9 at 1080p, or whatever fills the small box).' },
   { k: 'hold', label: 'Winner stays up for (s)', type: 'num', def: 5, min: 1, max: 30, step: 0.5 },
   { k: 'volume', label: 'Sound effects volume', type: 'num', def: 50, min: 0, max: 100, step: 5, help: '0 = silent.' },
 ];
@@ -617,10 +623,18 @@ const SHADOW_MAT = new THREE.MeshBasicMaterial({ color: 0x1a0a20, transparent: t
 const POOL_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: .16, depthWrite: false });
 let PX = 7, W = 2, H = 2, cssLeft = 0, cssTop = 0, camX = 0;
 
+// Across the whole bottom of the screen, or in a small box at the bottom centre (`layout=box`).
+const BOXED = CFG.layout !== 'wide', BOX_W = 200, BOX_H = 108;
 // The canvas is drawn at one pixel per art pixel and blown up, so it stays crisp. One world unit = one pixel across.
 function layout() {
-  PX = CFG.pixel || Math.max(2, Math.round(innerHeight / 120));
-  W = Math.ceil(innerWidth / PX / 2) * 2; H = Math.ceil(innerHeight / PX / 2) * 2;
+  if (BOXED) {
+    // a little window of a fixed size (in art pixels) at the bottom centre: nothing ever draws outside it
+    PX = CFG.pixel || Math.max(1, Math.round(innerWidth * CFG.boxsize / 100 / BOX_W));
+    W = BOX_W; H = BOX_H;
+  } else {
+    PX = CFG.pixel || Math.max(2, Math.round(innerHeight / 120));
+    W = Math.ceil(innerWidth / PX / 2) * 2; H = Math.ceil(innerHeight / PX / 2) * 2;
+  }
   renderer.setSize(W, H, false);
   cssLeft = Math.floor((innerWidth - W * PX) / 2); cssTop = innerHeight - H * PX;
   Object.assign(canvas.style, { width: W * PX + 'px', height: H * PX + 'px', left: cssLeft + 'px', top: cssTop + 'px' });
@@ -632,6 +646,7 @@ function layout() {
   camera.lookAt(0, ty, 0);
   const r = document.documentElement.style, o = Math.max(2, Math.round(PX * .6));
   r.setProperty('--p', PX + 'px');
+  r.setProperty('--boxw', W * PX + 'px');
   r.setProperty('--ol', [[o, 0], [-o, 0], [0, o], [0, -o], [o, o], [-o, o], [o, -o], [-o, -o]].map(([x, y]) => `${x}px ${y}px 0 #1c120c`).join(','));
 }
 // Models are full 3D, but each one is tipped back to face the camera straight on, so they look flat (no looking
@@ -978,9 +993,10 @@ function placeLabels() {
   if (!stage) return;
   const ban = $('ban'), bars = $('bars');
   const [x, y] = toCss(stage.root, 0, 52), [, y2] = toCss(stage.root, 0, 76);
-  bars.style.top = Math.max(8 + bars.offsetHeight, Math.round(y2)) + 'px';
+  const top0 = Math.max(cssTop, 0) + 8;
+  bars.style.top = Math.max(top0 + bars.offsetHeight, Math.round(y2)) + 'px';
   bars.style.left = Math.round(x) + 'px';
-  ban.style.top = Math.max(16 + bars.offsetHeight + ban.offsetHeight, Math.round(y)) + 'px';
+  ban.style.top = Math.max(top0 + 8 + bars.offsetHeight + ban.offsetHeight, Math.round(y)) + 'px';
   ban.style.left = Math.round(x) + 'px';
 }
 function banner(title, sub = '', winColor) {
@@ -1002,7 +1018,7 @@ function setBar(w) {
 function pow(x, y, text) {
   const [cx, cy] = toCss(stage.root, x, y), el = document.createElement('div');
   el.className = 'pow'; el.textContent = text;
-  el.style.left = Math.round(cx) + 'px'; el.style.top = Math.round(cy) + 'px';
+  el.style.left = Math.round(clamp(cx, cssLeft + 6 * PX * 4, cssLeft + W * PX - 6 * PX * 4)) + 'px'; el.style.top = Math.round(cy) + 'px';
   el.style.rotate = range(-14, 14) + 'deg';
   $('ui').appendChild(el);
   setTimeout(() => el.remove(), 800);

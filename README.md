@@ -30,6 +30,10 @@ Lives at <https://slam.ixitxachitl.com/>.
 In OBS: **Add → Browser**, URL `https://slam.ixitxachitl.com/?channel=yourchannel`, at your canvas size (e.g.
 1920×1080). The background is transparent inside OBS.
 
+It pops up in a small box along the bottom of the screen, in the middle, and everything stays inside it. Set
+**Where it shows** (`layout=wide`) to use the whole screen instead, with the sky and lights going right up to the
+top; **Box width** (`boxsize`, % of the screen, default 40) sets how big the box is.
+
 Right-click the source → **Interact** and move the mouse over it:
 
 - The bar in the bottom-right corner starts a match between two names you type, and **Stop** ends one early.
