@@ -503,20 +503,8 @@ function beltVB() {
 
 const YAW = 50 * Math.PI / 180;   // three-quarter view: the body turned sideways, the head turned back to you
 const yawOf = f => f > 0 ? YAW : f < 0 ? -YAW : 0;
-// A dark outline round a part, so the little people stand out: a copy of the part a pixel bigger all round,
-// drawn inside out (only its far side shows, peeking out round the edges).
-const OUTLINE_MAT = new THREE.MeshBasicMaterial({ color: 0x1c120c, side: THREE.BackSide });
-const _bb = new THREE.Box3(), _sz = new THREE.Vector3(), _ct = new THREE.Vector3();
-function outlined(mesh, pad = 1) {
-  mesh.geometry.computeBoundingBox();
-  _bb.copy(mesh.geometry.boundingBox); _bb.getSize(_sz); _bb.getCenter(_ct);
-  const hull = new THREE.Mesh(mesh.geometry, OUTLINE_MAT);
-  for (const a of ['x', 'y', 'z']) { const k = (_sz[a] + pad * 2) / Math.max(_sz[a], 1e-3); hull.scale[a] = k; hull.position[a] = mesh.position[a] + _ct[a] * (1 - k); }
-  mesh.parent.add(hull);
-  mesh.hull = hull;
-  return mesh;
-}
-const setGeo = (mesh, geo) => { mesh.geometry = geo; if (mesh.hull) mesh.hull.geometry = geo; };
+// swap a part's shape or colors
+const setGeo = (mesh, geo) => { mesh.geometry = geo; };
 
 // A wrestler (or the ref): root (standing on the floor or the mat, facing the camera) → air (how high up they
 // are, and how far over they're tipped: lying down, flying, flipping) → pivot (which way they face; grows and
@@ -531,7 +519,7 @@ function makeWrestler(who, look, x, z) {
   const air = new THREE.Group(); root.add(air);
   const pivot = new THREE.Group(); pivot.position.y = -HIP; air.add(pivot);
   const inner = new THREE.Group(); pivot.add(inner); world.add(root);
-  const mesh = (geo, parent) => { const o = new THREE.Mesh(geo, MAT); parent.add(o); return outlined(o); };
+  const mesh = (geo, parent) => { const o = new THREE.Mesh(geo, MAT); parent.add(o); return o; };
   const limb = (geo, px, py) => { const grp = new THREE.Group(); grp.position.set(px, py, 0); inner.add(grp); mesh(geo, grp); return grp; };
   const headG = new THREE.Group(); inner.add(headG);
   const w = {
@@ -1329,7 +1317,7 @@ async function match(A, B, winner) {
   turn(win, 0, .3);
   win.pose = 'belt'; win.setFace('happy');
   const bg = new THREE.Group(); bg.position.set(0, 20, 2); win.inner.add(bg);
-  const belt = new THREE.Mesh(beltVB().geo(), MAT); bg.add(belt); outlined(belt);
+  const belt = new THREE.Mesh(beltVB().geo(), MAT); bg.add(belt);
   prop(bg, { dur: .4 }); sfx('pop');
   lose.setFace('dazed'); lose.pose = 'dazed';
   for (let i = 0; i < 3; i++) spawn(0, 0, 0, 0, 'star', { w: lose, ph: i * 2.1, life: 60, col: '#ffe14a' });
