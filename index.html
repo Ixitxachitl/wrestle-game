@@ -29,6 +29,9 @@
     youtube   a live video ID or link (needs ytkey), or a ws:// bridge
     ytkey     YouTube Data API v3 key ytpoll    seconds between YouTube checks (default 6)
     demo      1 = fake chatters wrestle every so often, for trying it out
+    firsttime 1 = show first-time chatters too (default 0: Twitch flags them, and spam bots usually show up that way)
+    botlist   1 = leave out the ~1k known bots on the public TwitchInsights list (default 1)
+    ignore    names to always leave out, comma separated (default: the usual chat bots)
 
   Matches:
     cmd       the command (default !wrestle). "!wrestle name" starts a match with that chatter; "!wrestle" on its
@@ -135,10 +138,11 @@
   .sp-f{margin:0 0 12px}
   .sp-f:last-child{margin-bottom:0}
   .sp-f label{display:block;margin-bottom:4px}
-  .sp-f input[type=text],.sp-f input[type=password],.sp-f input[type=number],.sp-f select{width:100%;box-sizing:border-box;
+  .sp-f input[type=text],.sp-f input[type=password],.sp-f input[type=number],.sp-f textarea,.sp-f select{width:100%;box-sizing:border-box;
     font:700 15px var(--txt);padding:7px 9px;border:2px solid var(--ink);border-radius:8px;background:#fff;color:var(--ink)}
-  .sp-f input:focus,.sp-f select:focus{outline:3px solid var(--cyan);outline-offset:1px}
-  .sp-f input:disabled,.sp-f select:disabled{background:#e8e6ef;color:#6a6278}
+  .sp-f input:focus,.sp-f textarea:focus,.sp-f select:focus{outline:3px solid var(--cyan);outline-offset:1px}
+  .sp-f input:disabled,.sp-f textarea:disabled,.sp-f select:disabled{background:#e8e6ef;color:#6a6278}
+  .sp-f textarea{min-height:58px;resize:vertical}
   .sp-f small{display:block;margin-top:5px;font-size:13px;color:#4a4560}
   .sp-f small.url{color:#c2185b}
   .sp-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -185,6 +189,10 @@ const FIELDS = [
   { k: 'ytkey', label: 'YouTube API key', type: 'password', def: '', help: 'YouTube Data API v3 key from Google Cloud Console.' },
   { k: 'ytpoll', label: 'YouTube check every (s)', type: 'num', def: 6, min: 2, max: 60, step: 1, help: 'Lower = snappier, but uses the daily API quota faster.' },
   { k: 'demo', label: 'Demo chat', type: 'bool', def: false, help: 'Fake chatters wrestle every so often, for trying it out.' },
+  { sec: 'Filtering' },
+  { k: 'firsttime', label: 'Show first-time chatters', type: 'bool', def: false, help: 'Twitch flags these; spam bots usually show up this way.' },
+  { k: 'botlist', label: 'Hide known bots', type: 'bool', def: true, help: 'Public TwitchInsights list (needs the overlay hosted, not a local file).' },
+  { k: 'ignore', label: 'Always hide these users', type: 'area', def: 'nightbot, streamelements, streamlabs, moobot, fossabot, wizebot, soundalerts, sery_bot, kofistreambot, botrixoficial, commanderroot', help: 'Comma or line separated.' },
   { sec: 'Matches' },
   { k: 'cmd', label: 'Match command', type: 'text', def: '!wrestle', help: '"!wrestle somebody" starts a match with them, if they chatted in the last 10 minutes. On its own, it picks one of those.' },
   { k: 'cooldown', label: 'Cooldown (s)', type: 'num', def: 60, min: 0, max: 3600, step: 5, help: 'After a match, how long until the next one can start. The broadcaster skips it.' },
@@ -1397,8 +1405,24 @@ window.slam = {
 };
 
 // ---------------- chat ----------------
+// ---------------- who's left out ----------------
+// The "ignore" names, plus (with "Hide known bots") the ~1k known bot accounts on the public TwitchInsights
+// list. If that can't be reached (offline, blocked, or the overlay opened as a local file), it's just the names.
+const IGNORE = new Set(CFG.ignore.toLowerCase().split(/[\s,]+/).map(s => s.replace(/^@/, '')).filter(Boolean));
+async function loadBotList() {
+  try {
+    const r = await fetch('https://api.twitchinsights.net/v1/bots/all', { cache: 'no-store' });
+    const j = await r.json();
+    (j.bots || []).forEach(b => { const name = Array.isArray(b) ? b[0] : b; if (name) IGNORE.add(String(name).toLowerCase()); });
+  } catch (e) {
+    console.warn('known-bot list unavailable, using ignore= only', e);
+  }
+  setTimeout(loadBotList, 6 * 3600 * 1000); // refresh every 6 hours
+}
+if (CFG.botlist) loadBotList();
+
 function handleChat({ name, text, platform = 'custom', owner = false, mod = false, vip = false, color, login }) {
-  if (!name) return;
+  if (!name || IGNORE.has(String(name).toLowerCase())) return;
   const plain = (text || '').replace(/^\x01ACTION |\x01$/g, '').trim(), cmd = plain.split(/\s+/)[0].toLowerCase(), arg = plain.slice(cmd.length).trim();
   if (platform !== 'demo') remember(name, color, login, platform);
   if (cmd !== CFG.cmd) return;
@@ -1428,6 +1452,7 @@ function connectTwitch(channel) {
       const m = /^(?:@(\S+) )?:([^!\s]+)![^ ]+ PRIVMSG #\S+ :(.*)$/.exec(line);
       if (!m) continue;
       const tags = m[1] ? parseTags(m[1]) : {}, badges = tags.badges || '';
+      if (tags['first-msg'] === '1' && !CFG.firsttime) continue;
       handleChat({ name: tags['display-name'] || m[2], login: m[2], text: m[3], platform: 'twitch', color: tags.color,
         owner: /(^|,)broadcaster\//.test(badges) || m[2] === channel,
         mod: tags.mod === '1' || /(^|,)moderator\//.test(badges),
@@ -1592,8 +1617,8 @@ hostEl.addEventListener('click', e => { if (e.target.dataset?.h === 'stop') stop
       for (const [v, t] of f.opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; inp.appendChild(o); }
       wrapF.append(lab, inp);
     } else {
-      inp = document.createElement('input');
-      inp.type = f.type === 'num' ? 'number' : f.type;
+      inp = document.createElement(f.type === 'area' ? 'textarea' : 'input');
+      if (f.type !== 'area') inp.type = f.type === 'num' ? 'number' : f.type;
       if (f.type === 'num') { inp.min = f.min; inp.max = f.max; inp.step = f.step; }
       if (f.ph) inp.placeholder = f.ph;
       inp.spellcheck = false; inp.autocomplete = 'off';
